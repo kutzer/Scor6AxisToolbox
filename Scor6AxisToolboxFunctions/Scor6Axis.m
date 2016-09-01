@@ -32,7 +32,7 @@ classdef Scor6Axis < matlab.mixin.SetGet
     %   BSEPRGposition  - Joint positions (including gripper "joint")
     %   BSEPRGvelocity  - Joint velocities (including gripper "joint")
     %
-    %   D. Saiontz and M. Kutzer, 31Aug2016, USNA/SEAP
+    %   D. Saiontz & M. Kutzer, 31Aug2016, USNA/SEAP
 
     % --------------------------------------------------------------------
     % General properties
@@ -84,10 +84,20 @@ classdef Scor6Axis < matlab.mixin.SetGet
             narginchk(0,1);
             if nargin > 0
                 % TODO - check for correct COM port syntax
+                % NOTE: This differs based on different operating systems
             else
-                % TODO - check for available COM ports
-                % TODO - prompt the user for the COM port
-                error('Scor6Axis:NoPort','COM port must be specified.');
+                % Get serial ports
+                inst = instrhwinfo('serial');
+                % Display list dialog to user
+                [idx,OK] = listdlg('PromptString','Select a file:',...
+                    'SelectionMode','single',...
+                    'ListString',inst.SerialPorts);
+                % Get selection
+                if OK
+                    COM = inst.SerialPorts{idx};
+                else
+                    error('Scor6Axis:Constructor','No serial port selected.');
+                end
             end
             
             % Check if port is already declared or in use
