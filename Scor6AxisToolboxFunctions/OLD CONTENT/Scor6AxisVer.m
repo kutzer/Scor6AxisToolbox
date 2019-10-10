@@ -14,13 +14,11 @@ function varargout = Scor6AxisVer
 
 % Updates
 %   01Sep2016 - Updated to include Scor6AxisUpdate
-%   14Nov2018 - Updated to incorporate new 6-axis controller commands
-%   15Nov2018 - Updated to include S-curve movement time estiamtes
 
 A.Name = 'ScorBot 6-Axis Toolbox';
-A.Version = '1.1.0';
+A.Version = '1.0.1';
 A.Release = '(R2015b)';
-A.Date = '15-Nov-2018';
+A.Date = '01-Sep-2016';
 A.URLVer = 1;
 
 msg{1} = sprintf('MATLAB %s Version: %s %s',A.Name, A.Version, A.Release);

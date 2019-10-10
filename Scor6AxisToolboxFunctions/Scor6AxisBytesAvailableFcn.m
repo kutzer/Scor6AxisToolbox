@@ -2,70 +2,126 @@ function Scor6AxisBytesAvailableFcn(s,event)
 % SCOR6AXISBYTESAVAILABLEFCN
 %
 %
-% D. Saiontz, M. Kutzer, 31Aug2016, USNA/SEAP
+% M. Kutzer, 14Nov2018, USNA
 
-global Scor6AxisData
+global Scor6AxisData Scor6AxisIsOK Scor6AxisVelStatus Scor6AxisTiming Scor6sim
 
 %% Initialize global variable if it does not already exist
 if isempty(Scor6AxisData)
-    Scor6AxisData.T = [];
-    Scor6AxisData.P = [];
-    Scor6AxisData.V = [];
-    Scor6AxisData.S = [];
+    Scor6AxisData.Time = [];     % Run time in seconds
+    Scor6AxisData.Mode = [];     % Position mode [Degrees, Radians, Counts]
+    Scor6AxisData.BSEPRG = [];   % Joint configuration and gripper state
+    Scor6AxisData.Status = [];   % Axis Status
+    Scor6AxisData.Movement = []; % Axis Movement
 end
+
+if isempty(Scor6AxisTiming)
+    Scor6AxisTiming.dt = 0.02; % Default set by Scor6Axis Controller
+    Scor6AxisTiming.tStart = now * 24 * 60 * 60; 
+end
+
+%% Update timing
+Scor6AxisTiming.t_LastCallback = now * 24 * 60 * 60; 
 
 %% Set data collection limit
-dataLimit = 5000; % data history limit
+%dataLimit = 5000; % data history limit
 
 %% Read serial port
-try
-    switch event.Type
-        case 'BytesAvailable'
-            if ser.BytesAvailable > 9
-                % Read data from serial buffer
-                data = fscanf(s,...
-                    [...
-                    '$T%f',...                % Time stamp
-                    'P%f,%f,%f,%f,%f,%f',...  % Joint position
-                    'V%f,%f,%f,%f,%f,%f',...  % Joint velocity
-                    'S%d,%d,%d,%d,%d,%d' ...  % Joint state
-                    ],...
-                    [1,19]); % Data size
-                % Parse Data
-                T = data(1);     % Time stamp
-                P = data(2:7);   % Axis positions
-                V = data(8:13);  % Axis velocities
-                S = data(14:19); % Axis states
-                % Package Data
-                % TODO - check lengths of all fields
-                if size(Scor6AxisData.T,1) >= dataLimit
-                    % Migrate old data
-                    Scor6AxisData.T(1:(dataLimit-1), :) = Scor6AxisData.T(2:dataLimit, :);
-                    Scor6AxisData.P(1:(dataLimit-1), :) = Scor6AxisData.P(2:dataLimit, :);
-                    Scor6AxisData.V(1:(dataLimit-1), :) = Scor6AxisData.V(2:dataLimit, :);
-                    Scor6AxisData.S(1:(dataLimit-1), :) = Scor6AxisData.S(2:dataLimit, :);
-                    % Add new data
-                    Scor6AxisData.T(dataLimit, :) = T;
-                    Scor6AxisData.P(dataLimit, :) = P;
-                    Scor6AxisData.V(dataLimit, :) = V;
-                    Scor6AxisData.S(dataLimit, :) = S;
-                else
-                    % Append new data
-                    Scor6AxisData.T(end+1, :) = T;
-                    Scor6AxisData.P(end+1, :) = P;
-                    Scor6AxisData.V(end+1, :) = V;
-                    Scor6AxisData.S(end+1, :) = S;
+%try
+switch event.Type
+    case 'BytesAvailable'
+        if s.BytesAvailable > 3
+            % Read data from serial buffer
+            msg = fscanf(s,'%s');
+            % Print Message (for debugging)
+            %fprintf('LINE: %s !END\n',msg);
+            % Messages should generally take the form:
+            % T#.#P_#,#,#,#,#,#V#,#,#,#,#,#S____M____
+            idxT = strfind(msg,'T');
+            idxP = strfind(msg,'P');
+            idxV = strfind(msg,'V');
+            idxS = strfind(msg,'S');
+            idxM = strfind(msg,'M');
+            % Check for telemetry/status message
+            if numel(idxT) == 1 && numel(idxP) == 1 && ...
+                    numel(idxS) == 1 && numel(idxM) == 1
+                
+                % Get time stamp
+                time = sscanf( msg( (idxT(1)+1):(idxP(1)-1) ),'%f' );
+                % Get BSEPRG position value
+                BSEPRGposition = sscanf( msg( (idxP(1)+2):(idxV(1)-1) ), '%f,%f,%f,%f,%f,%f',[1,6]);
+                % Get BSEPRG velocity value
+                BSEPRGvelocity = sscanf( msg( (idxV(1)+1):(idxS(1)-1) ), '%f,%f,%f,%f,%f,%f',[1,6]);
+                % Get Mode
+                mode = msg( idxP(1)+1 );
+                % Get status and movement information
+                status   = msg( (idxS(1)+1):(idxM(1)-1) );
+                movement = msg( (idxM(1)+1):(idxM(1)+2) );
+                
+                % Displace parsed message
+                %{
+                    fprintf('\t             Time - %.4f\n',time);
+                    fprintf('\t  Position BSEPRG - [%.4f,%.4f,%.4f,%.4f,%.4f,%.4f]\n',BSEPRGposition);
+                    fprintf('\t  Velocity BSEPRG - [%.4f,%.4f,%.4f,%.4f,%.4f,%.4f]\n',BSEPRGvelocity);
+                    fprintf('\t             Mode - %s\n',mode);
+                    fprintf('\t           Status - %s\n',status);
+                    fprintf('\t         Movement - %s\n',movement);
+                %}
+                
+                Scor6AxisData.Time = time;                      % Run time in seconds
+                Scor6AxisData.Mode = mode;                      % Position mode [Degrees, Radians, Counts]
+                Scor6AxisData.BSEPRGposition = BSEPRGposition;  % Joint configuration and gripper state position
+                Scor6AxisData.BSEPRGvelocity = BSEPRGvelocity;  % Joint configuration and gripper state velocity
+                Scor6AxisData.Status = status;                  % Axis Status
+                Scor6AxisData.Movement = movement;              % Axis Movement
+                
+                % Update timing
+                Scor6AxisTiming.t_LastBSEPR = now * 24 * 60 * 60;
+                
+                % Update simulation
+                if ~isempty(Scor6sim)
+                    if ishandle(Scor6sim.Axes)
+                        ScorSimSetBSEPR(Scor6sim,BSEPRGposition(1:5));
+                        ScorSimSetGripper(Scor6sim,BSEPRGposition(6));
+                    else
+                        Scor6sim = [];
+                    end
                 end
-                % Display data in command window
-                %fprintf('Time: %.2f\n',T)
-                %fprintf('Position: %.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n', P);
-                %fprintf('Velocity: %.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n', V);
-                %fprintf('State:    %d, %d, %d, %d, %d, %d\n', S);
+            else
+                if isequal(msg,'OK')
+                    Scor6AxisIsOK = 1;
+                end
+                if isequal(msg,'Press?formenu')
+                    Scor6AxisIsOK = -1;
+                end
+                if isequal(msg,'NAK')
+                    Scor6AxisIsOK = -2;
+                end
+                if isequal(msg,'EnterTimeout,velocity:b,s,e,p,rinRad/sec,ginmmSec')
+                    Scor6AxisVelStatus.Response = true;
+                end
+                % T0.200,Vb-0.000,s-0.106,e0.019,p0.316,r0.000,g0.000
+                if contains(msg,'T') &&... 
+                        contains(msg,',Vb') &&...
+                        contains(msg,',s') && ...
+                        contains(msg,',e') && ...
+                        contains(msg,',p') && ...
+                        contains(msg,',r') && ...
+                        contains(msg,',g')
+                    Scor6AxisVelStatus.Acknowledge = true;
+                end
+                if isequal(msg,'Incorrectnumberofparametersscanned!!')
+                    Scor6AxisVelStatus.Response = false;
+                    Scor6AxisVelStatus.Acknowledge = false;
+                    Scor6AxisVelStatus.Error = true;
+                end
+                fprintf('LINE: %s !END\n',msg);
             end
-        otherwise
-            error('Unexpected event.')
-    end
-catch
-    % Flush buffer is a read error occurs
-    flushinput(s);
+        end
+    otherwise
+        error('Unexpected event.')
 end
+%catch
+% Flush buffer is a read error occurs
+%flushinput(s);
+%end
