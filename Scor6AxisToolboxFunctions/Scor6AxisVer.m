@@ -16,11 +16,17 @@ function varargout = Scor6AxisVer
 %   01Sep2016 - Updated to include Scor6AxisUpdate
 %   14Nov2018 - Updated to incorporate new 6-axis controller commands
 %   15Nov2018 - Updated to include S-curve movement time estiamtes
+%   18Feb2019 - Updated to incorporate 6-axis protocol updates
+%   07Mar2019 - Updated to incorporate 6-axis protocol updates
+%   11Mar2019 - Updated to incorporate 6-axis protocol updates
+%   14Mar2019 - Updated to incorporate 6-axis protocol updates
+%   25Mar2019 - Updated to incorporate 6-axis protocol updates
+%   29Mar2019 - Updated to incorporate 6-axis protocol updates
 
 A.Name = 'ScorBot 6-Axis Toolbox';
 A.Version = '1.1.0';
 A.Release = '(R2015b)';
-A.Date = '15-Nov-2018';
+A.Date = '29-Mar-2019';
 A.URLVer = 1;
 
 msg{1} = sprintf('MATLAB %s Version: %s %s',A.Name, A.Version, A.Release);
