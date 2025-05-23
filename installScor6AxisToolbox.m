@@ -1,4 +1,4 @@
-function installScor6AxisToolbox(replaceExisting)
+function installScor6AxisToolbox(replaceExisting,skipAdmin)
 % INSTALLSCOR6AXISTOOLBOX installs the ScorBot 6-Axis Toolbox for MATLAB.
 %   INSTALLSCOR6AXISTOOLBOX installs ScorBot 6-Axis Toolbox into the  
 %   following locations:
@@ -16,18 +16,54 @@ function installScor6AxisToolbox(replaceExisting)
 %   D. Saiontz and M. Kutzer 01Sept2016, USNA/SEAP
 
 % Updates
+%   22May2025 - Enable local user installation
 
-%% Install/Update required toolboxes
-%ToolboxUpdate('Transformation');
-%ToolboxUpdate('Plotting');
-ToolboxUpdate('ScorBot');
+%% Define required toolboxes
+requiredToolboxes = {...
+    'ScorBot'};
 
 %% Assign tool/toolbox specific parameters
 dirName = 'scor6axis';
+toolboxContent  = 'Scor6AxisToolboxFunctions';
+toolboxExamples = 'Scor6AxisToolbox Example SCRIPTS';
+toolboxName = 'Scor6Axis Toolbox';
+toolboxShort = strrep(toolboxName, ' ', '');
+
+%% Define toolbox directory options
+toolboxPathAdmin = fullfile(matlabroot,'toolbox',dirName);
+toolboxPathLocal = fullfile(prefdir,'toolbox',dirName);
+toolboxPathExamples = fullfile(userpath,sprintf('Examples, %s',toolboxName));
+
+%% Check if folders exist
+isPathAdmin = isfolder(toolboxPathAdmin);
+isPathLocal = isfolder(toolboxPathLocal);
+isPathExamples = isfolder(toolboxPathExamples);
+
+%% Check if folders are in the MATLAB path
+allPaths = path;
+allPaths = strsplit(allPaths,pathsep);
+
+inPathAdmin = any(matches(allPaths,toolboxPathAdmin),'all');
+inPathLocal = any(matches(allPaths,toolboxPathLocal),'all');
+inPathExamples = any(matches(allPaths,toolboxPathExamples),'all');
 
 %% Check inputs
-if nargin == 0
+if nargin < 1
     replaceExisting = [];
+end
+if nargin < 2
+    skipAdmin = false;
+end
+
+%% Check for admin write access
+isAdmin = checkWriteAccess(matlabroot);
+isLocal = checkWriteAccess(prefdir);
+isExample = checkWriteAccess(userpath);
+
+%% Check for basic write access
+if ~isLocal
+    warning('No local write access?');
+    return
 end
 
 %% Installation error solution(s)
@@ -39,37 +75,20 @@ adminSolution = sprintf(...
      '\t\t(b) Right click\n',...
      '\t\t(c) Select "Run as administrator"\n']);
 
-%% Check for toolbox directory
-toolboxRoot  = fullfile(matlabroot,'toolbox',dirName);
-isToolbox = exist(toolboxRoot,'file');
-if isToolbox == 7
-    % Apply replaceExisting argument
-    if isempty(replaceExisting)
-        choice = questdlg(sprintf(...
-            ['MATLAB Root already contains the ScorBot 6-Axis Toolbox.\n',...
-            'Would you like to replace the existing toolbox?']),...
-            'Yes','No');
-    elseif replaceExisting
-        choice = 'Yes';
-    else
-        choice = 'No';
-    end
+%% Prompt user if not an admin
+if ~isAdmin && ~skipAdmin
+    choice = questdlg(sprintf(...
+        ['MATLAB is running without administrative privileges.\n',...
+        'Would you like to install the %s locally?'],toolboxName),...
+        sprintf('Local Install %s',toolboxName),...
+        'Yes','No','Cancel','Yes');
     % Replace existing or cancel installation
     switch choice
         case 'Yes'
-            % TODO - check if NatNet SDK components are running and close
-            % them prior to removing directory
-            rmpath(toolboxRoot);
-            [isRemoved, msg, msgID] = rmdir(toolboxRoot,'s');
-            if isRemoved
-                fprintf('Previous version of the ScorBot 6-Axis Toolbox removed successfully.\n');
-            else
-                fprintf('Failed to remove old the ScorBot 6-Axis Toolbox folder:\n\t"%s"\n',toolboxRoot);
-                fprintf(adminSolution);
-                error(msgID,msg);
-            end
+            skipAdmin = true;
         case 'No'
-            fprintf('The ScorBot 6-Axis Toolbox currently exists, installation cancelled.\n');
+            fprintf('Unable to write perform installation.\n\n');
+            fprintf('To install as an administrator - %s',adminSolution);
             return
         case 'Cancel'
             fprintf('Action cancelled.\n');
@@ -79,41 +98,133 @@ if isToolbox == 7
     end
 end
 
-%% Create Scor6Axis Toolbox Path
-[isDir,msg,msgID] = mkdir(toolboxRoot);
-if isDir
-    fprintf('The ScorBot 6-Axis Toolbox folder created successfully:\n\t"%s"\n',toolboxRoot);
+%% Check for existing toolbox
+if skipAdmin
+    isToolbox = isPathLocal;
+    toolboxPath = toolboxPathLocal;
 else
-    fprintf('Failed to create ScorBot 6-Axis Toolbox folder:\n\t"%s"\n',toolboxRoot);
-    fprintf(adminSolution);
-    error(msgID,msg);
+    isToolbox = isPathAdmin;
+    toolboxPath = toolboxPathAdmin;
+end
+
+%% Check for toolbox directory
+if isToolbox
+    % Apply replaceExisting argument
+    if isempty(replaceExisting)
+        choice = questdlg(sprintf(...
+            ['MATLAB path already contains the %s.\n',...
+            'Would you like to replace the existing toolbox?'],toolboxName),...
+            sprintf('Replace Existing %s',toolboxName),...
+            'Yes','No','Cancel','Yes');
+    elseif replaceExisting
+        choice = 'Yes';
+    else
+        choice = 'No';
+    end
+    % Replace existing or cancel installation
+    switch choice
+        case 'Yes'
+            % Remove existing paths
+            removePath(toolboxName,...
+                toolboxPathAdmin,inPathAdmin,isPathAdmin,isAdmin);
+            removePath(toolboxName,...
+                toolboxPathLocal,inPathLocal,isPathLocal,isLocal);
+            removePath(toolboxName,...
+                toolboxPathExamples,inPathExamples,inPathExamples,isExample);
+        case 'No'
+            fprintf('%s currently exists, installation cancelled.\n',toolboxName);
+            return
+        case 'Cancel'
+            fprintf('Action cancelled.\n');
+            return
+        otherwise
+            error('Unexpected response.');
+    end
 end
 
 %% Migrate toolbox folder contents
-toolboxContent = 'Scor6AxisToolboxFunctions';
-if ~isdir(toolboxContent)
+% Toolbox contents
+migrateContent(toolboxContent,toolboxPath,toolboxName);
+% Example files
+try
+migrateContent(toolboxExamples,toolboxPathExamples,...
+    sprintf('%s Examples',toolboxName));
+catch
+    fprintf('Unable to migrate examples.');
+end
+
+%% Save toolbox path
+%addpath(genpath(toolboxRoot),'-end');
+addpath(toolboxPath,'-end');
+pathdef_local = fullfile(userpath,'pathdef.m');
+if isAdmin
+    % Delete local pathdef file
+    if isfile(pathdef_local)
+        delete(pathdef_local);
+    end
+    % Save administrator local pathdef file
+    savepath;
+else
+    % Create local user pathdef file
+    fprintf('Updating local user "pathdef.m"...')
+    savepath( pathdef_local );
+    fprintf('[Complete]\n');
+end
+
+%% Rehash toolbox cache
+fprintf('Rehashing Toolbox Cache...');
+rehash TOOLBOXCACHE
+fprintf('[Complete]\n');
+
+%% Install/Update required toolboxes
+for ii = 1:numel(requiredToolboxes)
+    try
+        ToolboxUpdate(requiredToolboxes{ii});
+    catch ME
+        fprintf(2,'[ERROR]\nUnable to install required toolbox: "%s"\n',requiredToolboxes{ii});
+        fprintf(2,'\t%s\n',ME.message);
+    end
+end
+
+%% internal functions (shared workspace)
+% ------------------------------------------------------------------------
+function migrateContent(sourceIn,destination,msg)
+
+% Migrate toolbox folder contents
+if ~isfolder(sourceIn)
     error(sprintf(...
-        ['Change your working directory to the location of "installScor6AxisToolbox.m".\n',...
+        ['Change your working directory to the location of "install%s.m".\n',...
          '\n',...
          'If this problem persists:\n',...
-         '\t(1) Unzip your original download of "Scor6AxisToolbox" into a new directory\n',...
+         '\t(1) Unzip your original download of "%s" into a new directory\n',...
          '\t(2) Open a new instance of MATLAB "as administrator"\n',...
          '\t\t(a) Locate MATLAB shortcut\n',...
          '\t\t(b) Right click\n',...
          '\t\t(c) Select "Run as administrator"\n',...
-         '\t(3) Change your "working directory" to the location of "installScor6AxisToolbox.m"\n',...
-         '\t(4) Enter "installScor6AxisToolbox" (without quotes) into the command window\n',...
-         '\t(5) Press Enter.']));
+         '\t(3) Change your "working directory" to the location of "install%s.m"\n',...
+         '\t(4) Enter "install%s" (without quotes) into the command window\n',...
+         '\t(5) Press Enter.'],toolboxShort,toolboxShort,toolboxShort,toolboxShort));
 end
-files = dir(toolboxContent);
-wb = waitbar(0,'Copying the ScorBot 6-Axis Toolbox contents...');
+
+% Create Toolbox Path
+[isDir,msgDir,msgID] = mkdir(destination);
+if isDir
+    fprintf('%s folder created successfully:\n\t"%s"\n',msg,destination);
+else
+    fprintf('Failed to create %s folder:\n\t"%s"\n',msg,destination);
+    fprintf(adminSolution);
+    error(msgID,msgDir);
+end
+
+% Migrate contents
+files = dir(sourceIn);
+wb = waitbar(0,sprintf('Copying %s contents...',msg));
 n = numel(files);
-fprintf('Copying the ScorBot 6-Axis Toolbox contents:\n');
+fprintf('Copying %s contents:\n',msg);
 for i = 1:n
     % source file location
-    source = fullfile(toolboxContent,files(i).name);
-    % destination location
-    destination = toolboxRoot;
+    source = fullfile(sourceIn,files(i).name);
+    
     if files(i).isdir
         switch files(i).name
             case '.'
@@ -160,26 +271,56 @@ for i = 1:n
     waitbar(i/n,wb);
 end
 set(wb,'Visible','off');
-
-%% Save toolbox path
-%addpath(genpath(toolboxRoot),'-end');
-addpath(toolboxRoot,'-end');
-savepath;
-
-%% Rehash toolbox cache
-fprintf('Rehashing Toolbox Cache...');
-rehash TOOLBOXCACHE
-fprintf('[Complete]\n');
+delete(wb);
 
 end
 
+end
+
+%% Internal functions (unique workspace)
+% ------------------------------------------------------------------------
+function tfWrite = checkWriteAccess(pname)
+
+tmpFname = fullfile(pname,'tmp.txt');
+tmpHndle = fopen(tmpFname, 'w');
+if tmpHndle < 0
+    tfWrite = false;
+else
+    tfWrite = true;
+    fclose(tmpHndle);
+    delete(tmpFname);
+end
+
+end
+% ------------------------------------------------------------------------
+function removePath(toolboxName,pName,inPath,isPath,isDelete)
+% Remove path
+if inPath
+    rmpath(pName);
+end
+% Remove folder
+if isPath && isDelete
+    [isRemoved, msg, msgID] = rmdir(pName,'s');
+    if isRemoved
+        fprintf('Previous version of %s removed successfully:\n\t"%s"\n',toolboxName,pName);
+    else
+        fprintf('Failed to remove old %s folder:\n\t"%s"\n',toolboxName,pName);
+        %fprintf(adminSolution);
+        error(msgID,msg);
+    end
+elseif ~isDelete
+    fprintf('Skipping removal of old %s folder:\n\t"%s"\n',toolboxName,pName);
+end
+
+end
+% ------------------------------------------------------------------------
 function ToolboxUpdate(toolboxName)
 
-%% Setup functions
+% Setup functions
 ToolboxVer = str2func( sprintf('%sToolboxVer',toolboxName) );
 installToolbox = str2func( sprintf('install%sToolbox',toolboxName) );
 
-%% Check current version
+% Check current version
 try
     A = ToolboxVer;
 catch ME
@@ -187,48 +328,87 @@ catch ME
     fprintf('No previous version of %s detected.\n',toolboxName);
 end
 
-%% Setup temporary file directory
+% Setup temporary file directory
 fprintf('Downloading the %s Toolbox...',toolboxName);
 tmpFolder = sprintf('%sToolbox',toolboxName);
 pname = fullfile(tempdir,tmpFolder);
+if isfolder(pname)
+    % Remove existing directory
+    [ok,msg] = rmdir(pname,'s');
+end
+% Create new directory
+[ok,msg] = mkdir(tempdir,tmpFolder);
 
-%% Download and unzip toolbox (GitHub)
+% Download and unzip toolbox (GitHub)
 url = sprintf('https://github.com/kutzer/%sToolbox/archive/master.zip',toolboxName);
 try
-    fnames = unzip(url,pname);
+    %fnames = unzip(url,pname);
+    %urlwrite(url,fullfile(pname,tmpFname));
+    tmpFname = sprintf('%sToolbox-master.zip',toolboxName);
+    websave(fullfile(pname,tmpFname),url);
+    fnames = unzip(fullfile(pname,tmpFname),pname);
+    delete(fullfile(pname,tmpFname));
+    
     fprintf('SUCCESS\n');
     confirm = true;
-catch
+catch ME
+    fprintf('FAILED\n');
     confirm = false;
+    fprintf(2,'ERROR MESSAGE:\n\t%s\n',ME.message);
 end
 
-%% Check for successful download
+% Check for successful download
+alternativeInstallMsg = [...
+    sprintf('Manually download the %s Toolbox using the following link:\n',toolboxName),...
+    newline,...
+    sprintf('%s\n',url),...
+    newline,...
+    sprintf('Once the file is downloaded:\n'),...
+    sprintf('\t(1) Unzip your download of the "%sToolbox"\n',toolboxName),...
+    sprintf('\t(2) Change your "working directory" to the location of "install%sToolbox.m"\n',toolboxName),...
+    sprintf('\t(3) Enter "install%sToolbox" (without quotes) into the command window\n',toolboxName),...
+    sprintf('\t(4) Press Enter.')];
+        
 if ~confirm
-    error('InstallToolbox:FailedDownload','Failed to download updated version of %s Toolbox.',toolboxName);
+    warning('InstallToolbox:FailedDownload','Failed to download updated version of %s Toolbox.',toolboxName);
+    fprintf(2,'\n%s\n',alternativeInstallMsg);
+	
+    msgbox(alternativeInstallMsg, sprintf('Failed to download %s Toolbox',toolboxName),'warn');
+    return
 end
 
-%% Find base directory
+% Find base directory
 install_pos = strfind(fnames, sprintf('install%sToolbox.m',toolboxName) );
 sIdx = cell2mat( install_pos );
 cIdx = ~cell2mat( cellfun(@isempty,install_pos,'UniformOutput',0) );
 
 pname_star = fnames{cIdx}(1:sIdx-1);
 
-%% Get current directory and temporarily change path
+% Get current directory and temporarily change path
 cpath = cd;
 cd(pname_star);
 
-%% Install Scor6Axis Toolbox
-installToolbox(true);
+% Check for admin
+skipAdmin = ~checkWriteAccess(matlabroot);
 
-%% Move back to current directory and remove temp file
+% Install Toolbox
+% TODO - consider providing the user with an option or more information
+%        related to "skipAdmin"
+try
+    installToolbox(true,skipAdmin);
+catch ME
+    cd(cpath);
+    throw(ME);
+end
+
+% Move back to current directory and remove temp file
 cd(cpath);
 [ok,msg] = rmdir(pname,'s');
 if ~ok
     warning('Unable to remove temporary download folder. %s',msg);
 end
 
-%% Complete installation
+% Complete installation
 fprintf('Installation complete.\n');
 
 end
